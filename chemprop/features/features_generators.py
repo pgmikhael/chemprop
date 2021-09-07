@@ -133,6 +133,19 @@ except ImportError:
                           '(https://github.com/bp-kelley/descriptastorus) to use RDKit 2D normalized features.')
 
 
+@register_features_generator('rdkit_fingerprint')
+def rdkit_fingerprint_generator(mol: Molecule) -> np.ndarray:
+
+    # If you want to use the RDKit molecule
+    mol = Chem.MolFromSmiles(mol) if type(mol) == str else mol
+
+    # Replace this with code which generates features from the molecule
+    features_vec = Chem.RDKFingerprint(mol)
+    features = np.zeros((1,))
+    DataStructs.ConvertToNumpyArray(features_vec, features)
+
+    return features
+
 """
 Custom features generator template.
 
