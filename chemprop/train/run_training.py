@@ -13,6 +13,7 @@ from torch.optim.lr_scheduler import ExponentialLR
 from .evaluate import evaluate, evaluate_predictions
 from .predict import predict
 from .train import train
+from chemprop.spectra_utils import normalize_spectra, load_phase_mask
 from chemprop.args import TrainArgs
 from chemprop.constants import MODEL_FILE_NAME
 from chemprop.data import get_class_sizes, get_data, MoleculeDataLoader, MoleculeDataset, set_cache_graph, split_data
@@ -51,6 +52,7 @@ def run_training(args: TrainArgs,
                              features_path=args.separate_test_features_path,
                              atom_descriptors_path=args.separate_test_atom_descriptors_path,
                              bond_features_path=args.separate_test_bond_features_path,
+                             phase_features_path=args.separate_test_phase_features_path,
                              smiles_columns=args.smiles_columns,
                              logger=logger)
     if args.separate_val_path:
@@ -59,6 +61,7 @@ def run_training(args: TrainArgs,
                             features_path=args.separate_val_features_path,
                             atom_descriptors_path=args.separate_val_atom_descriptors_path,
                             bond_features_path=args.separate_val_bond_features_path,
+                            phase_features_path=args.separate_val_phase_features_path,
                             smiles_columns = args.smiles_columns,
                             logger=logger)
 
@@ -67,7 +70,8 @@ def run_training(args: TrainArgs,
     elif args.separate_val_path:
         train_data, _, test_data = split_data(data=data,
                                               split_type=args.split_type,
-                                              sizes=(0.8, 0.0, 0.2),
+                                              sizes=args.split_sizes,
+                                              key_molecule_index=args.split_key_molecule,
                                               seed=args.seed,
                                               num_folds=args.num_folds,
                                               args=args,
@@ -75,7 +79,8 @@ def run_training(args: TrainArgs,
     elif args.separate_test_path:
         train_data, val_data, _ = split_data(data=data,
                                              split_type=args.split_type,
-                                             sizes=(0.8, 0.2, 0.0),
+                                             sizes=args.split_sizes,
+                                             key_molecule_index=args.split_key_molecule,
                                              seed=args.seed,
                                              num_folds=args.num_folds,
                                              args=args,
@@ -84,6 +89,7 @@ def run_training(args: TrainArgs,
         train_data, val_data, test_data = split_data(data=data,
                                                      split_type=args.split_type,
                                                      sizes=args.split_sizes,
+                                                     key_molecule_index=args.split_key_molecule,
                                                      seed=args.seed,
                                                      num_folds=args.num_folds,
                                                      args=args,
@@ -139,6 +145,19 @@ def run_training(args: TrainArgs,
     if args.dataset_type == 'regression':
         debug('Fitting scaler')
         scaler = train_data.normalize_targets()
+    elif args.dataset_type == 'spectra':
+        debug('Normalizing spectra and excluding spectra regions based on phase')
+        args.spectra_phase_mask = load_phase_mask(args.spectra_phase_mask_path)
+        for dataset in [train_data, test_data, val_data]:
+            data_targets = normalize_spectra(
+                spectra=dataset.targets(),
+                phase_features=dataset.phase_features(),
+                phase_mask=args.spectra_phase_mask,
+                excluded_sub_value=None,
+                threshold=args.spectra_target_floor,
+            )
+            dataset.set_targets(data_targets)
+        scaler = None
     else:
         scaler = None
 
@@ -233,7 +252,6 @@ def run_training(args: TrainArgs,
         best_epoch, n_iter = 0, 0
         for epoch in trange(args.epochs):
             debug(f'Epoch {epoch}')
-
             n_iter = train(
                 model=model,
                 data_loader=train_data_loader,
@@ -304,7 +322,7 @@ def run_training(args: TrainArgs,
             info(f'Model {model_idx} test {metric} = {avg_test_score:.6f}')
             writer.add_scalar(f'test_{metric}', avg_test_score, 0)
 
-            if args.show_individual_scores:
+            if args.show_individual_scores and args.dataset_type != 'spectra':
                 # Individual test scores
                 for task_name, test_score in zip(args.task_names, scores):
                     info(f'Model {model_idx} test {task_name} {metric} = {test_score:.6f}')
