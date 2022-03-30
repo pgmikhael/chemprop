@@ -104,7 +104,10 @@ def set_features(args: PredictArgs, train_args: TrainArgs):
     #set explicit H option and reaction option
     set_explicit_h(train_args.explicit_h)
     set_adding_hs(args.adding_h)
-    set_reaction(train_args.reaction, train_args.reaction_mode)
+    if train_args.reaction:
+        set_reaction(train_args.reaction, train_args.reaction_mode)
+    elif train_args.reaction_solvent:
+        set_reaction(True, train_args.reaction_mode)
 
 
 def predict_and_save(args: PredictArgs, train_args: TrainArgs, test_data: MoleculeDataset,
@@ -186,9 +189,10 @@ def predict_and_save(args: PredictArgs, train_args: TrainArgs, test_data: Molecu
 
     # Save predictions
     print(f'Saving predictions to {args.preds_path}')
-    assert len(test_data) == len(avg_preds)
-    if args.ensemble_variance:
-        assert len(test_data) == len(all_epi_uncs)
+    #TODO: add unit tests for this
+    # assert len(test_data) == len(avg_preds)
+    # if args.ensemble_variance:
+        # assert len(test_data) == len(all_epi_uncs)
     makedirs(args.preds_path, isfile=True)
 
     # Set multiclass column names, update num_tasks definition for multiclass
