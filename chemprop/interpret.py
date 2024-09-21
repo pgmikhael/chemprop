@@ -9,6 +9,8 @@ from chemprop.data import get_data_from_smiles, get_header, get_smiles, Molecule
 from chemprop.train import predict
 from chemprop.utils import load_args, load_checkpoint, load_scalers, timeit
 
+from csv import DictWriter
+from tqdm import tqdm 
 
 MIN_ATOMS = 15
 C_PUCT = 10
@@ -320,7 +322,9 @@ def interpret(args: InterpretArgs) -> None:
     property_name = header[args.property_id] if len(header) > args.property_id else 'score'
     print(f'smiles,{property_name},rationale,rationale_score')
 
-    for smiles in all_smiles:
+    results_path = args.data_path.replace(".csv", f"_{args.checkpoint_dir.split('/')[-2]}_property{args.property_id}_rationale.csv")
+
+    for smiles in tqdm(all_smiles, total = len(all_smiles)):
         score = scoring_function([smiles])[0]
         if score > args.prop_delta:
             rationales = mcts(
@@ -339,6 +343,18 @@ def interpret(args: InterpretArgs) -> None:
             min_size = min(len(x.atoms) for x in rationales)
             min_rationales = [x for x in rationales if len(x.atoms) == min_size]
             rats = sorted(min_rationales, key=lambda x: x.P, reverse=True)
+
+            result = {
+                    "smiles" : smiles,
+                    "score" : score,
+                    "rationale" : [k.smiles for k in rats],
+                    "rationale_scores" : [k.P for k in rats],
+            }
+
+            with open(results_path, 'a', newline='') as f_object:  
+                dictwriter_object = DictWriter(f_object, fieldnames=["smiles", "score", "rationale", "rationale_scores"])
+                dictwriter_object.writerow(result)
+            
             print(f'{smiles},{score:.3f},{rats[0].smiles},{rats[0].P:.3f}')
 
 
